@@ -122,6 +122,16 @@ class SpectrOMQueryModel
 	}
 
 	/**
+	 * Turns off the SQL_CALC_FOUND_ROWS option in the query that WP_Query is going to build
+	 * @return SpectrOMQueryModel A reference to the current instance
+	 */
+	public function no_found_rows()
+	{
+		$this->args['no_found_rows'] = TRUE;
+		return ($this);
+	}
+
+	/**
 	 * Constructs the WP_Query object from array parameters and previously obtained options
 	 * @param array $args An array of standard options for the WP_Query class.
 	 * @return WP_Query The constructed instance of WP_Query
