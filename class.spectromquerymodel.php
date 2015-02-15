@@ -1,5 +1,10 @@
 <?php
 
+/**
+ * SpectrOMQueryModel
+ * Sets up an inheritable model to use when creating several WP_Query instances for custom post types
+ */
+
 class SpectrOMQueryModel
 {
 	protected $post_type = 'posts';
