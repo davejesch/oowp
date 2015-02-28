@@ -3,6 +3,7 @@
 /**
  * Simplifies operations working with Featured Images
  */
+if (!class_exists('SpectrOMFeaturedImageModel', FALSE)) {
 
 class SpectrOMFeaturedImageModel
 {
@@ -150,5 +151,7 @@ class SpectrOMFeaturedImageModel
 		return ($ret);
 	}
 }
+
+} // class_exists
 
 // EOF

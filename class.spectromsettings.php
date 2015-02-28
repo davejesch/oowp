@@ -4,9 +4,12 @@
  * SpectrOMSettings
  * Simplifies the use of the WordPress Settings API
  */
+if (!class_exists('SpectrOMSettings', FALSE)) {
+
 class SpectrOMSettings
 {
 	private $_args = NULL;
+	private $_output_style = FALSE;
 
 	public function __construct($args)
 	{
@@ -37,9 +40,14 @@ class SpectrOMSettings
 
 			// add all the fields
 			foreach ($section['fields'] as $field_id => $field) {
+				$label = '<label for="' . $field_id. '"' .
+					(isset($field['tooltip']) ? ' title="' . esc_attr($field['tooltip']) . '" ' : '') .
+					'>' . esc_html($field['title']) .
+					($this->_is_required($field) ? '<span class="required">*</span>' : '') .
+					'</label>';
 				add_settings_field(
 					$field_id,								// id
-					'<label for="' . $field_id. '">' . esc_html($field['title']) . '</label>',	// setting title
+					$label,									// setting title
 					array(&$this, 'display_field'),			// display callback
 					$this->get_page(), // get_group(),		// settings page
 					$section_id,							// settings section
@@ -146,6 +154,19 @@ class SpectrOMSettings
 	}
 
 	/**
+	 * Checks if the current field is required
+	 * @param array $field The array that describes the field to be checked
+	 * @return boolean TRUE if the 'required' rule is in the validation rules; otherwise FALSE
+	 */
+	private function _is_required($field)
+	{
+		$rules = explode(' ', isset($field['validation']) ? $field['validation'] : '');
+		if (in_array('required', $rules))
+			return (TRUE);
+		return (FALSE);
+	}
+
+	/**
 	 * Searches through data array looking for the named section
 	 * @param string $section The section name if found, otherwise null
 	 */
@@ -175,6 +196,15 @@ class SpectrOMSettings
 	 */
 	public function section_callback($arg)
 	{
+		if (!$this->_output_style) {
+			$this->_output_style = TRUE;
+			echo '<style>', PHP_EOL;
+			echo 'table.form-table th, table.form-table td { padding: 5px 5px }', PHP_EOL;
+			echo 'table.form-table label span.required { color: red; margin-left: .7em }', PHP_EOL;
+			echo 'table.form-table input:hover, table.form-table textarea:hover { border: 1px solid #777700 }', PHP_EOL;
+			echo 'table.form-table input.invalid { border: 1px solid red }', PHP_EOL;
+			echo '</style>', PHP_EOL;
+		}
 
 		$section_id = $arg['id'];
 		$section = $this->_get_section($section_id);
@@ -187,16 +217,21 @@ class SpectrOMSettings
 	 */
 	public function validate_options($input)
 	{
-//OOSettings::log(__METHOD__.'()');
-		//return ($valid);
-////////
-		$this->get_options();
-		if (isset($input['name']) && !empty($input['name']))
-			$valid['name'] = sanitize_text_field($input['name']);
-		if (isset($input['phone']) && !empty($input['phone']))
-			$valid['phone'] = sanitize_text_field($input['phone']);
-		if (isset($input['key']) && !empty($input['key']))
-			$valid['key'] = sanitize_text_field($input['key']);
+		$valid = array();
+		$validator = new SpectrOMValidation();
+
+		foreach ($this->_args['sections'] as $section_id => $section) {
+			foreach ($section['fields'] as $field_id => $field) {
+				$data = $input[$field_id];
+				$is_valid = TRUE;
+				if (isset($field['validation'])) {
+					$rules = explode(' ', $field['validation']);
+					$is_valid = $validator->validate($data, $rules);
+				}
+				if ($is_valid)
+					$valid[$field_id] = $data;
+			}
+		}
 
 		return ($valid);
 	}
@@ -244,5 +279,7 @@ class SpectrOMSettings
 		}
 	}
 }
+
+} // class_exists
 
 // EOF
