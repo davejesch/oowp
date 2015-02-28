@@ -5,6 +5,8 @@
  * Sets up an inheritable model to use when creating several WP_Query instances for custom post types
  */
 
+if (!class_exists('SpectrOMQueryModel', FALSE)) {
+
 class SpectrOMQueryModel
 {
 	protected $post_type = 'posts';
@@ -157,5 +159,7 @@ class SpectrOMQueryModel
 		return ($this->query);
 	}
 }
+
+} // class_exists
 
 // EOF
