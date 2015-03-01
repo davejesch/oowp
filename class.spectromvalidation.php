@@ -186,14 +186,14 @@ class SpectrOMValidation
 			}
 		}
 
-		// TODO:
-//		if (!$results)
-//			add_settings_error();
-
-
 		return ($results);
 	}
 
+	/**
+	 * Sets up the callback to perform custom validation actions
+	 * @param callback $callback The callback function used to validate the data
+	 * @param string $error_msg The error message for failed validations
+	 */
 	public function set_custom_validation($callback, $error_msg)
 	{
 		$this->_custom_callback = $callback;
