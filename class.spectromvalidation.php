@@ -15,13 +15,15 @@ class SpectrOMValidation
 	public $type = NULL;
 	public $param = NULL;
 
+	private $_field = NULL;
+
 	public function __construct()
 	{
 		// Set message per type
 		$this->_error_messages = array(
 			'required' => __('This field is required.', 'spectrom'),
 			'numeric' => __('This field must be a number.', 'spectrom'),
-			'email' => __('This field must be an email.', 'spectrom'),
+			'email' => __('This field must be an email address.', 'spectrom'),
 			'alphanumeric' => __('This field only accepts alphanumeric characters.', 'spectrom'),
 			'alpha' => __('This field only accepts alpha letters.', 'spectrom'),
 			'name' => __('This field only accepts alpha letters, spaces, dashes(-), and apostrophes(\').', 'spectrom'),
@@ -36,6 +38,7 @@ class SpectrOMValidation
 			'minval' => __('This field value should be at least %d.', 'spectrom'),
 			'password' => __('The password should be at least %d characters.', 'spectrom'),
 			'custom' => '%s',
+			'regex' => __('Failed regular expression %s', 'spectrom'),
 			'unknown' => __('Unrecognized validation rule: "%s"', 'spectrom'),
 		);
 	}
@@ -44,10 +47,13 @@ class SpectrOMValidation
 	 * Validate value based on type
 	 * @param  mixed $value The value to be validated
 	 * @param  array $rules An array containing the validation rules to check against
+	 * @param  array $field The array for the current form field
 	 * @return boolean TRUE if the data is valid according to all the rules; otherwise FALSE
 	 */
-	public function validate(&$value, $rules = array())
+	public function validate(&$value, $rules = array(), $field = array())
 	{
+		$this->_field = $field;
+
 		$results = TRUE;
 		$param = 0;
 
@@ -61,73 +67,82 @@ class SpectrOMValidation
 			{
 			case 'positive':
 				if ($value < 0)
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'int':
 				if (!ctype_digit($value))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'required':
 				if ('' === trim($value))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'numeric':
 				if (!is_numeric($value))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'email':
 				if (!is_email($value))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'alphanumeric':
 				$comp = str_replace('_', '', $value);
 //				return (empty($comp) ? TRUE : ctype_alnum($comp));
 				if (!empty($comp) && !ctype_alnum($comp))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'alpha':
 				$comp = str_replace(' ', '', $value); // allow spaces
 //				return (empty($comp) ? TRUE : ctype_alpha($comp));
 				if (!empty($comp) && !ctype_alnum($comp))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'name':
 				$comp = str_replace(array(' ', '-', '\''), '', $value); // allow spaces, dash and apostrophe
 //				return (empty($comp) ? TRUE : ctype_alpha($comp));
 				if (!empty($comp) && !ctype_alnum($comp))
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'maxlen':
 				 if (strlen($value) > intval($param))
-					 $results = $this->add_message($type, intval($param));
+					 $results = $this->_add_message($type, intval($param));
 				 break;
 
 			case 'minlen':
 				if (strlen($value) < intval($param))
-					$results = $this->add_message($type, intval($param));
+					$results = $this->_add_message($type, intval($param));
 				break;
 
 			case 'maxval':
 				if ($value > $param)
-					$results = $this->add_message($type, $param);
+					$results = $this->_add_message($type, $param);
 				break;
 
 			case 'minval':
 				if ($value < $param)
-					$results = $this->add_message($type, $param);
+					$results = $this->_add_message($type, $param);
+				break;
+
+			case 'regex':
+				if (!preg_match($param, $value)) {
+					if (isset($field['error']))
+						$results = $this->_add_message('custom', $field['error']);
+					else
+						$results = $this->_add_message($type, $param);
+				}
 				break;
 
 			case 'past':
 				if (strtotime($value) >= time())
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'website':
@@ -137,7 +152,7 @@ class SpectrOMValidation
 						$value = 'http://' . $value;
 
 					if (FALSE === filter_var($value, FILTER_VALIDATE_URL))
-						$results = $this->add_message($type);
+						$results = $this->_add_message($type);
 				}
 				break;
 
@@ -146,26 +161,35 @@ class SpectrOMValidation
 //				return ($d && $d->ToString('Y-m-d') == $value);
 				$comp = strtotime($value);
 				if (0 === $comp)
-					$results = $this->add_message($type);
+					$results = $this->_add_message($type);
 				break;
 
 			case 'password':
 				$comp = trim($value);
 				if (!empty($v) && strlen($comp) > intval($param))
-					$results = $this->add_message($type, intval($param));
+					$results = $this->_add_message($type, intval($param));
 				break;
 
 			case 'custom':
 				if (NULL !== $this->_custom_callback && NULL !== $this->_custom_error &&
 					call_user_func_array($this->_custom_callback, array($value)))
-					$results = $this->add_message($type, $this->_custom_error);
+					$results = $this->_add_message($type, $this->_custom_error);
+				break;
+
+			case 'striphtml':
+				$value = strip_tags($value);
 				break;
 
 			default:
-				$results = $this->add_message('unknown', $type);
+				$results = $this->_add_message('unknown', $type);
 				break;
 			}
 		}
+
+		// TODO:
+//		if (!$results)
+//			add_settings_error();
+
 
 		return ($results);
 	}
@@ -185,9 +209,14 @@ class SpectrOMValidation
 	private function _add_message($type, $param = NULL)
 	{
 		if (NULL === $param)
-			$this->_errors[] = $this->_error_messages[$type];
+			$msg = $this->_error_messages[$type];
 		else
-			$this->_errors[] = sprintf($this->_error_messages[$type], $param);
+			$msg = sprintf($this->_error_messages[$type], $param);
+		$this->_errors[] = $msg;
+		add_settings_error($this->_field['id'],				// setting
+			'code',											// code
+			$msg);											// emssage
+
 		return (FALSE);
 	}
 

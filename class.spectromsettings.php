@@ -10,12 +10,20 @@ class SpectrOMSettings
 {
 	private $_args = NULL;
 	private $_output_style = FALSE;
+	private $_errors = NULL;
 
 	public function __construct($args)
 	{
 		$this->_args = $args;
 
 		// TODO: do sanity check on $args data
+
+		// create a 'id' element within the fields[] array
+		foreach ($this->_args['sections'] as $section_id => &$section) {
+			foreach ($section['fields'] as $field_id => &$field) {
+				$field['id'] = $field_id;
+			}
+		}
 
 		add_action('admin_init', array(&$this, 'init_settings'));
 	}
@@ -25,10 +33,17 @@ class SpectrOMSettings
 	 */
 	public function init_settings()
 	{
+		if (isset($_GET['settings-updated'])) {
+			$this->_errors = get_settings_errors();
+			global $wp_settings_errors;
+			$wp_settings_errors = array();
+			add_action('admin_notices', array($this, 'error_notice'));
+		}
+
 		register_setting(
-			$this->/*get_option(), //*/get_group(),						// option group
-			$this->get_option(),					// option name
-			array(&$this, 'validate_options')		// validation callback
+			$this->get_group(),							// option group
+			$this->get_option(),						// option name
+			array(&$this, 'validate_options')			// validation callback
 		);
 
 		foreach ($this->_args['sections'] as $section_id => $section) {
@@ -45,15 +60,35 @@ class SpectrOMSettings
 					'>' . esc_html($field['title']) .
 					($this->_is_required($field) ? '<span class="required">*</span>' : '') .
 					'</label>';
+
+				// check for any validation errors
+//				if (isset($this->_errors[$field_id]))
+//					$field['setting_error'] = $errors[$field_id];
+
 				add_settings_field(
 					$field_id,								// id
 					$label,									// setting title
 					array(&$this, 'display_field'),			// display callback
-					$this->get_page(), // get_group(),		// settings page
+					$this->get_page(),						// settings page
 					$section_id,							// settings section
 					array($section_id, $field_id));
 			}
 		}
+	}
+
+	/**
+	 * Output a noticed letting the user know there were errors
+	 */
+	public function error_notice()
+	{
+		echo '<div class="error settings-error">';
+		echo '<p><strong>';
+		printf(_n('There was %1$d error with the form contents.',
+				'There were %1$d errors with the form contents.',
+				count($this->_errors), 'spectrom'),
+				count($this->_errors));
+		echo '</strong></p>';
+		echo '</div>';
 	}
 
 	/**
@@ -72,10 +107,14 @@ class SpectrOMSettings
 			if (!isset($field['value']))
 				$field['value'] = '';
 
+			$field_name = $section_id . '[' . $field_id . ']';
 			switch ($field['type'])
 			{
 			case 'text':
-				echo '<input type="text" id="', $field_id, '" name="', $section_id, '[', $field_id, ']" ';
+			case 'password':
+			case 'message':
+			case 'custom':
+				echo '<input type="text" id="', $field_id, '" name="', $field_name, '" ';
 				$this->_render_class('regular-text', $field);
 				if (isset($field['value']))
 					echo ' value="', esc_attr($field['value']), '" ';
@@ -83,7 +122,7 @@ class SpectrOMSettings
 				break;
 
 			case 'select':
-				echo '<select id="', $field_id, '" name="', $field_id, '">', PHP_EOL;
+				echo '<select id="', $field_id, '" name="', $field_name, '">', PHP_EOL;
 				if (isset($field['option-title']))
 					echo '<option value="0">', esc_html($field['option-title']), '</option>', PHP_EOL;
 				foreach ($field['options'] as $opt_name => $opt_value) {
@@ -97,39 +136,44 @@ class SpectrOMSettings
 
 			case 'radio':
 				foreach ($field['options'] as $opt_name => $opt_value) {
-					echo '<input type="radio" name="', $field_id, '" value="', $opt_name, '" >';
+					echo '<input type="radio" name="', $field_name, '" value="', $opt_name, '" >';
 					echo '&nbsp;', esc_html($opt_value), '&nbsp;';
 				}
 				break;
 
 			case 'checkbox':
-				echo '<input type="checkbox" id="', $field_id, '" name="', $field_id, '" ';
+				echo '<input type="checkbox" id="', $field_id, '" name="', $field_name, '" ';
 				if (isset($field['value']) && $field['value'])
 					echo ' checked="checked"';
 				echo ' />';
 				break;
 
 			case 'textarea':
-				echo '<textarea id="', $field_id, '" name="', $field_id, '" ';
+				echo '<textarea id="', $field_id, '" name="', $field_name, '" ';
 				if (isset($field['size']) && is_array($field['size']))
 					echo ' cols="', $field['size'][0], '" rows="', $field['size'][1], '" ';
 				echo '>', esc_textarea($field['value']), '</textarea>';
 				break;
 
 			case 'button':
-				echo '<button type="button" id="', $field_id, '" name="', $field_id, '" ';
+				echo '<button type="button" id="', $field_id, '" name="', $field_name, '" ';
 				$this->_render_class('', $field);
 				echo '>', esc_html($field['value']), '</button>';
 				break;
 
-			case 'password':
 			case 'datepicker':
-			case 'message':
-			case 'custom':
 				break;
 
 			default:
 				throw new Exception('unrecognized field type value: ' . $field['type']);
+			}
+
+			// check for any errors
+			$err = $this->_get_errors($field_id);
+			if (0 !== count($err)) {
+				foreach ($err as $msg) {
+					echo '<p class="spectrom-error">', esc_html($msg), '</p>';
+				}
 			}
 
 			if (isset($field['afterinput']))
@@ -177,6 +221,23 @@ class SpectrOMSettings
 		return (NULL);
 	}
 
+	/**
+	 * Retrieve a list of errors for the name settings id
+	 * @param string $name The name of the settings id to look for
+	 * @return array The list of errors found for the name settings id
+	 */
+	private function _get_errors($name)
+	{
+		$ret = array();
+		if (NULL !== $this->_errors) {
+			foreach ($this->_errors as $error) {
+				if ($name === $error['setting'])
+					$ret[] = $error['message'];
+			}
+		}
+		return ($ret);
+	}
+
 	/*
 	 * Retrieve the field array information from the section and field ids
 	 * @param string $section The section id name to look for the field id under
@@ -203,6 +264,7 @@ class SpectrOMSettings
 			echo 'table.form-table label span.required { color: red; margin-left: .7em }', PHP_EOL;
 			echo 'table.form-table input:hover, table.form-table textarea:hover { border: 1px solid #777700 }', PHP_EOL;
 			echo 'table.form-table input.invalid { border: 1px solid red }', PHP_EOL;
+			echo 'p.spectrom-error { color: #dd3d36; border-left: 4px solid #dd3d36; padding-left: 8px; }', PHP_EOL;
 			echo '</style>', PHP_EOL;
 		}
 
@@ -226,7 +288,7 @@ class SpectrOMSettings
 				$is_valid = TRUE;
 				if (isset($field['validation'])) {
 					$rules = explode(' ', $field['validation']);
-					$is_valid = $validator->validate($data, $rules);
+					$is_valid = $validator->validate($data, $rules, $field);
 				}
 				if ($is_valid)
 					$valid[$field_id] = $data;
