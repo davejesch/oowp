@@ -34,24 +34,33 @@ class SpectrOMSettings
 	public function init_settings()
 	{
 		if (isset($_GET['settings-updated'])) {
-			$this->_errors = get_settings_errors();
+			$err = get_settings_errors();
+			$errors = array();
+			foreach ($err as $msg) {
+				if ('general' !== $msg['setting'] && 'settings_updated' !== $msg['code'])
+					$errors[] = $msg;
+			}
+			$this->_errors = $errors;
 			global $wp_settings_errors;
 			$wp_settings_errors = array();
-			add_action('admin_notices', array($this, 'error_notice'));
+			if (0 == count($this->_errors))
+				add_action('admin_notices', array(&$this, 'saved_notice'));
+			else
+				add_action('admin_notices', array($this, 'error_notice'));
 		}
 
 		register_setting(
-			$this->get_group(),							// option group
-			$this->get_option(),						// option name
-			array(&$this, 'validate_options')			// validation callback
+			$this->get_group(),								// option group
+			$this->get_option(),							// option name
+			array(&$this, 'validate_options')				// validation callback
 		);
 
 		foreach ($this->_args['sections'] as $section_id => $section) {
 			add_settings_section(
-				$section_id,							// id
-				$section['title'],						// title
-				array(&$this, 'section_callback'),		// callback
-				$this->get_page());						// page
+				$section_id,								// id
+				$section['title'],							// title
+				array(&$this, 'section_callback'),			// callback
+				$this->get_page());							// page
 
 			// add all the fields
 			foreach ($section['fields'] as $field_id => $field) {
@@ -60,10 +69,6 @@ class SpectrOMSettings
 					'>' . esc_html($field['title']) .
 					($this->_is_required($field) ? '<span class="required">*</span>' : '') .
 					'</label>';
-
-				// check for any validation errors
-//				if (isset($this->_errors[$field_id]))
-//					$field['setting_error'] = $errors[$field_id];
 
 				add_settings_field(
 					$field_id,								// id
@@ -77,7 +82,7 @@ class SpectrOMSettings
 	}
 
 	/**
-	 * Output a noticed letting the user know there were errors
+	 * Outputs a notice letting the user know there were errors
 	 */
 	public function error_notice()
 	{
@@ -88,6 +93,16 @@ class SpectrOMSettings
 				count($this->_errors), 'spectrom'),
 				count($this->_errors));
 		echo '</strong></p>';
+		echo '</div>';
+	}
+
+	/**
+	 * Outputs a notice letting the user know their settings were saved
+	 */
+	public function saved_notice()
+	{
+		echo '<div class="updated fade">';
+		echo '<p><strong>', __('Your changes have been saved.', 'ooplugin'), '</strong></p>';
 		echo '</div>';
 	}
 
@@ -107,14 +122,16 @@ class SpectrOMSettings
 			if (!isset($field['value']))
 				$field['value'] = '';
 
-			$field_name = $section_id . '[' . $field_id . ']';
+			$field_name = $this->get_option() . '[' . $field_id . ']';
 			switch ($field['type'])
 			{
 			case 'text':
 			case 'password':
-			case 'message':
-			case 'custom':
-				echo '<input type="text" id="', $field_id, '" name="', $field_name, '" ';
+				if ('password' === $field['type'])
+					$type = 'password';
+				else
+					$type = 'text';
+				echo '<input type="', $type, '" id="', $field_id, '" name="', $field_name, '" ';
 				$this->_render_class('regular-text', $field);
 				if (isset($field['value']))
 					echo ' value="', esc_attr($field['value']), '" ';
@@ -136,7 +153,11 @@ class SpectrOMSettings
 
 			case 'radio':
 				foreach ($field['options'] as $opt_name => $opt_value) {
-					echo '<input type="radio" name="', $field_name, '" value="', $opt_name, '" >';
+					if ($field['value'] === $opt_name)
+						$checked = ' checked="checked" ';
+					else
+						$checked = '';
+					echo '<input type="radio" name="', $field_name, '" value="', $opt_name, '"', $checked, ' >';
 					echo '&nbsp;', esc_html($opt_value), '&nbsp;';
 				}
 				break;
@@ -159,6 +180,13 @@ class SpectrOMSettings
 				echo '<button type="button" id="', $field_id, '" name="', $field_name, '" ';
 				$this->_render_class('', $field);
 				echo '>', esc_html($field['value']), '</button>';
+				break;
+
+			case 'message':
+				break;
+
+			case 'custom':
+				do_action('spectrom_settings_output_field', $field);
 				break;
 
 			case 'datepicker':
@@ -222,7 +250,7 @@ class SpectrOMSettings
 	}
 
 	/**
-	 * Retrieve a list of errors for the name settings id
+	 * Retrieve a list of errors for the named settings id
 	 * @param string $name The name of the settings id to look for
 	 * @return array The list of errors found for the name settings id
 	 */
@@ -282,34 +310,62 @@ class SpectrOMSettings
 		$valid = array();
 		$validator = new SpectrOMValidation();
 
-		foreach ($this->_args['sections'] as $section_id => $section) {
-			foreach ($section['fields'] as $field_id => $field) {
-				$data = $input[$field_id];
-				$is_valid = TRUE;
-				if (isset($field['validation'])) {
-					$rules = explode(' ', $field['validation']);
-					$is_valid = $validator->validate($data, $rules, $field);
+		if (NULL !== $input) {
+			foreach ($this->_args['sections'] as $section_id => $section) {
+				foreach ($section['fields'] as $field_id => $field) {
+					$data = '';
+					if (isset($input[$field_id]))
+						$data = $input[$field_id];
+
+					$is_valid = TRUE;
+					if (isset($field['validation'])) {
+						$rules = explode(' ', $field['validation']);
+						$is_valid = $validator->validate($data, $rules, $field);
+					}
+
+					if ($is_valid)
+						$valid[$field_id] = $data;
+					// if the ['revert_unvalidated'] settings form option is present, use the old value from the form field
+					else if (isset($this->_args['revert_unvalidated']))
+						$valid[$field_id] = isset($field['value']) ? $field['value'] : '';
 				}
-				if ($is_valid)
-					$valid[$field_id] = $data;
 			}
 		}
-
 		return ($valid);
 	}
 
+	/**
+	 * Get the ['page'] settings form option
+	 * @return string The ['page'] value from the settings form array argument
+	 */
 	public function get_page()
 	{
 		return ($this->_args['page']);
 	}
+
+	/**
+	 * Get the ['group'] settings form option
+	 * @return string The ['group'] value from the settings form array argument
+	 */
 	public function get_group()
 	{
 		return ($this->_args['group']);
 	}
+
+	/**
+	 * Get the ['option'] settings form option
+	 * @return string The ['option'] value from the settings form array argument
+	 */
 	public function get_option()
 	{
 		return ($this->_args['option']);
 	}
+
+	/**
+	 * Retrieves the ['title'] element from the settings section
+	 * @param string $section The id of the settings section to retrieve the title from
+	 * @return string The ['title'] value from the named settings section
+	 */
 	public function get_header($section = NULL)
 	{
 		if (NULL !== $section) {
@@ -318,12 +374,23 @@ class SpectrOMSettings
 		}
 		return ('');
 	}
+
+	/**
+	 * Wrapper method for the settings_fields() function. Outputs the settings fields for the named settings group
+	 * @param string $group The settings group name or NULL to use the default group name from the arguments
+	 */
 	public function settings_fields($group = NULL)
 	{
 		if (NULL === $group)
 			$group = $this->get_group();
 		settings_fields($group);
 	}
+
+	/**
+	 * Wrapper method for the settings_sections() function. Outputs the settings field for hte settings section
+	 * @param string $section The name of the section. Can be NULL to output all for the page, a string for a single section, or an array for multiple sections.
+	 * @throws Exception If the $section value is unrecognized
+	 */
 	public function settings_sections($section = NULL)
 	{
 		if (NULL === $section) {
@@ -336,9 +403,8 @@ class SpectrOMSettings
 			throw new Exception('unrecognized parameter type');
 		}
 
-		foreach ($sections as $sect) {
+		foreach ($sections as $sect)
 			do_settings_sections($sect);
-		}
 	}
 }
 
