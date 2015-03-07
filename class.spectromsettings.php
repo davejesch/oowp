@@ -125,6 +125,7 @@ class SpectrOMSettings
 			$field_name = $this->get_option() . '[' . $field_id . ']';
 			switch ($field['type'])
 			{
+			default:				// default to a 'text' type value
 			case 'text':
 			case 'password':
 				if ('password' === $field['type'])
@@ -191,9 +192,6 @@ class SpectrOMSettings
 
 			case 'datepicker':
 				break;
-
-			default:
-				throw new Exception('unrecognized field type value: ' . $field['type']);
 			}
 
 			// check for any errors
