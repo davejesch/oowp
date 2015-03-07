@@ -158,6 +158,24 @@ class SpectrOMQueryModel
 
 		return ($this->query);
 	}
+
+	/**
+	 * Get a name postmeta value for the current post in the loop
+	 * @param string $meta_key The meta key name
+	 * @return string The meta value for the name meta key if found; otherwise an empty string
+	 */
+	public function get_meta_data($meta_key)
+	{
+		$meta_value = '';
+		if ($this->query->in_the_loop) {
+			$post_id = $this->query->post->ID;
+
+			$meta_value = get_post_meta($post_id, $meta_key, TRUE);
+			if (FALSE === $meta_value)
+				$meta_value = '';
+		}
+		return ($meta_value);
+	}
 }
 
 } // class_exists
