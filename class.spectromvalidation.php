@@ -57,6 +57,8 @@ class SpectrOMValidation
 		$results = TRUE;
 		$param = 0;
 
+		// TODO: perform sanitizing operations first
+
 		foreach ($rules as $rule) {
 			if (FALSE !== strpos($rule, ':'))
 				list($type, $param) = explode(':', $rule, 2);
@@ -86,8 +88,10 @@ class SpectrOMValidation
 				break;
 
 			case 'email':
-				if (!is_email($value))
-					$results = $this->_add_message($type);
+				// empty field and it's required...don't do anything since the required rule will kick in
+				if (!empty($value) || !in_array('required', $rules))
+					if (!is_email($value))
+						$results = $this->_add_message($type);
 				break;
 
 			case 'alphanumeric':
@@ -117,8 +121,10 @@ class SpectrOMValidation
 				 break;
 
 			case 'minlen':
-				if (strlen($value) < intval($param))
-					$results = $this->_add_message($type, intval($param));
+				// empty field and it's required...don't do anything since the required rule will kick in
+				if (!empty($value) || !in_array('required', $rules))
+					if (strlen($value) < intval($param))
+						$results = $this->_add_message($type, intval($param));
 				break;
 
 			case 'maxval':
